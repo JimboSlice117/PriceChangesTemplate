@@ -279,7 +279,7 @@ function runSkuMatching() {
 
 
     const totalTime = (new Date().getTime() - startTime) / 1000;
-    statusCell.setValue(`MATCHING COMPLETE - ${matchResults.length} MFR SKUs processed in ${totalTime.toFixed(1)}s. ${totalMatches} matches. ${reviewRequiredMatchesOverall} for review.`).setBackground('#d9ead3');
+    statusCell.setValue(`MATCHING COMPLETE - ${matchResults.length} MFR SKUs processed in ${totalTime.toFixed(1)}s. ${totalMatches} matches. ${reviewRequiredMatches} for review.`).setBackground('#d9ead3');
     ui.alert('Accurate SKU Matching Complete',
              `${matchResults.length} MFR SKUs processed in ${totalTime.toFixed(1)}s.\n` +
              `Total matches: ${totalMatches}\n` +
