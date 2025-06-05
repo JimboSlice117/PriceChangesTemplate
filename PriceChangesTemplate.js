@@ -907,6 +907,103 @@ function createPriceChangesTab() {
 
 
 // ---------------- SKU MATCHING EXECUTION (SINGLE RUN) ----------------
+
+function clearMatchingSheet(sheet) {
+  const lastRowContent = sheet.getLastRow();
+  if (lastRowContent >= 3) {
+    sheet.getRange(3, 1, lastRowContent - 2, sheet.getLastColumn())
+      .clearContent().clearDataValidations().clearNote();
+  }
+  if (sheet.getMaxRows() > 2 && sheet.getMaxRows() > (lastRowContent || 2)) {
+    sheet.getRange((lastRowContent || 2) + 1, 1,
+                   sheet.getMaxRows() - (lastRowContent || 2),
+                   sheet.getLastColumn())
+      .clearContent().clearDataValidations().clearNote();
+  }
+}
+
+function prepareStatusCell(sheet) {
+  const cell = sheet.getRange(2, 1, 1, sheet.getLastColumn());
+  cell.merge()
+      .setValue('PROCESSING - Running SKU matching...')
+      .setBackground('#f9cb9c')
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center');
+  SpreadsheetApp.flush();
+  return cell;
+}
+
+function loadDataForMatching(statusCell, ui, startTime) {
+  statusCell.setValue('PROCESSING - Loading manufacturer data...');
+  SpreadsheetApp.flush();
+  const manufacturerData = getManufacturerData();
+  if (!manufacturerData || manufacturerData.length === 0) {
+    statusCell.setValue('ERROR - No manufacturer data found in "Manufacturer Price Sheet".')
+              .setBackground('#f4cccc');
+    logError('runSkuMatching', 'No manufacturer data found.', '', '', true, ui);
+    return null;
+  }
+
+  const mfrTime = (new Date().getTime() - startTime) / 1000;
+  statusCell.setValue(`PROCESSING - Loaded ${manufacturerData.length} MFR SKUs in ${mfrTime.toFixed(1)}s. Pre-processing platform data...`);
+  SpreadsheetApp.flush();
+
+  const rawPlatformData = getPlatformDataFromStructuredSheet();
+  if (!rawPlatformData || Object.keys(rawPlatformData).length === 0 || !Object.values(rawPlatformData).some(p => p.length > 0)) {
+    statusCell.setValue('ERROR - No platform data found or parsed from "Platform Databases" sheet.')
+              .setBackground('#f4cccc');
+    logError('runSkuMatching', 'No platform data found or parsed.', '', '', true, ui);
+    return null;
+  }
+
+  const { preProcessedPlatformDataWithAttributes, platformSkuMaps } = preProcessAllPlatformData(rawPlatformData);
+  let totalPlatformSkus = 0;
+  for (const platform in preProcessedPlatformDataWithAttributes) {
+    totalPlatformSkus += preProcessedPlatformDataWithAttributes[platform].length;
+  }
+
+  const dataLoadTime = (new Date().getTime() - startTime) / 1000;
+  statusCell.setValue(`PROCESSING - Loaded & pre-processed ${totalPlatformSkus} platform SKUs in ${dataLoadTime.toFixed(1)}s (total). Starting matching...`);
+  SpreadsheetApp.flush();
+
+  return { manufacturerData, preProcessedPlatformDataWithAttributes, platformSkuMaps };
+}
+
+function summarizeMatches(matchResults) {
+  let totalMatches = 0, exactMatches = 0, highConfidenceMatches = 0,
+      mediumConfidenceMatches = 0, lowConfidenceMatches = 0,
+      reviewRequiredMatches = 0;
+  matchResults.forEach(result => {
+    Object.values(result.matches).forEach(match => {
+      if (match) {
+        totalMatches++;
+        const confidence = match.confidenceScore;
+        if (confidence >= 95) exactMatches++;
+        else if (confidence >= 85) highConfidenceMatches++;
+        else if (confidence >= 70) mediumConfidenceMatches++;
+        else lowConfidenceMatches++;
+        if (match.matchType && (match.matchType.includes('REVIEW') || (confidence < 85 && confidence >= 70))) {
+          reviewRequiredMatches++;
+        }
+      }
+    });
+  });
+  return { totalMatches, exactMatches, highConfidenceMatches,
+           mediumConfidenceMatches, lowConfidenceMatches,
+           reviewRequiredMatches };
+}
+
+function finalizeMatching(statusCell, resultsLen, counts, totalTime, ui) {
+  statusCell.setValue(`MATCHING COMPLETE - ${resultsLen} MFR SKUs processed in ${totalTime.toFixed(1)}s. ${counts.totalMatches} matches. ${counts.reviewRequiredMatches} for review.`)
+            .setBackground('#d9ead3');
+  ui.alert('Accurate SKU Matching Complete',
+           `${resultsLen} MFR SKUs processed in ${totalTime.toFixed(1)}s.\n` +
+           `Total matches: ${counts.totalMatches}\n` +
+           `Exact (95-100%): ${counts.exactMatches}\nHigh (85-94%): ${counts.highConfidenceMatches}\n` +
+           `Medium (70-84%): ${counts.mediumConfidenceMatches}\nLow (<70%): ${counts.lowConfidenceMatches}\n` +
+           `${counts.reviewRequiredMatches} matches require review.`, ui.ButtonSet.OK);
+}
+
 function runSkuMatching() {
   const ui = SpreadsheetApp.getUi();
   initializeErrorLogSheet(); // Ensure error log sheet is ready
@@ -923,93 +1020,32 @@ function runSkuMatching() {
     return;
   }
 
-  // Clear previous results more thoroughly
-  const lastRowContent = matchingSheet.getLastRow();
-  if (lastRowContent >= 3) { // Header is row 1, status/message is row 2
-    matchingSheet.getRange(3, 1, lastRowContent - 2, matchingSheet.getLastColumn()).clearContent().clearDataValidations().clearNote();
-  }
-   if (matchingSheet.getMaxRows() > 2 && matchingSheet.getMaxRows() > (lastRowContent || 2) ) { 
-     // Clear any rows below the actual content that might have old data/formatting
-     matchingSheet.getRange((lastRowContent || 2) + 1, 1, matchingSheet.getMaxRows() - (lastRowContent || 2), matchingSheet.getLastColumn()).clearContent().clearDataValidations().clearNote();
-   }
-
-
-  const statusCell = matchingSheet.getRange(2, 1, 1, matchingSheet.getLastColumn());
-  statusCell.merge().setValue('PROCESSING - Running SKU matching...').setBackground('#f9cb9c').setFontWeight('bold').setHorizontalAlignment('center');
-  SpreadsheetApp.flush();
+  clearMatchingSheet(matchingSheet);
+  const statusCell = prepareStatusCell(matchingSheet);
 
   try {
     const startTime = new Date().getTime();
     Object.keys(skuNormalizeCache).forEach(key => delete skuNormalizeCache[key]); // Clear global normalization cache
 
-    statusCell.setValue('PROCESSING - Loading manufacturer data...'); SpreadsheetApp.flush();
-    const manufacturerData = getManufacturerData(); // From "Manufacturer Price Sheet"
-    if (!manufacturerData || manufacturerData.length === 0) {
-      statusCell.setValue('ERROR - No manufacturer data found in "Manufacturer Price Sheet".').setBackground('#f4cccc');
-      logError('runSkuMatching', 'No manufacturer data found.', '', '', true, ui);
-      return;
-    }
+    const data = loadDataForMatching(statusCell, ui, startTime);
+    if (!data) return;
 
-    const mfrTime = (new Date().getTime() - startTime) / 1000;
-    statusCell.setValue(`PROCESSING - Loaded ${manufacturerData.length} MFR SKUs in ${mfrTime.toFixed(1)}s. Pre-processing platform data...`); SpreadsheetApp.flush();
-    
-    const rawPlatformData = getPlatformDataFromStructuredSheet(); // From "Platform Databases"
-     if (!rawPlatformData || Object.keys(rawPlatformData).length === 0 || !Object.values(rawPlatformData).some(p => p.length > 0)) {
-      statusCell.setValue('ERROR - No platform data found or parsed from "Platform Databases" sheet.').setBackground('#f4cccc');
-      logError('runSkuMatching', 'No platform data found or parsed.', '', '', true, ui);
-      return;
-    }
+    const matchResults = performFullMatching(data.manufacturerData, data.preProcessedPlatformDataWithAttributes, data.platformSkuMaps);
 
-    const { preProcessedPlatformDataWithAttributes, platformSkuMaps /*, cleanSkuMaps - removed */ } = preProcessAllPlatformData(rawPlatformData);
-    
-    let totalPlatformSkus = 0; 
-    for (const platform in preProcessedPlatformDataWithAttributes) {
-        totalPlatformSkus += preProcessedPlatformDataWithAttributes[platform].length;
-    }
-
-    const dataLoadTime = (new Date().getTime() - startTime) / 1000;
-    statusCell.setValue(`PROCESSING - Loaded & pre-processed ${totalPlatformSkus} platform SKUs in ${dataLoadTime.toFixed(1)}s (total). Starting matching...`); SpreadsheetApp.flush();
-
-    const matchResults = performFullMatching(manufacturerData, preProcessedPlatformDataWithAttributes, platformSkuMaps /*, cleanSkuMaps - removed */);
-
-    let totalMatches = 0, exactMatches = 0, highConfidenceMatches = 0, mediumConfidenceMatches = 0, lowConfidenceMatches = 0, reviewRequiredMatches = 0;
-    matchResults.forEach(result => {
-      Object.values(result.matches).forEach(match => {
-        if (match) {
-          totalMatches++;
-          const confidence = match.confidenceScore;
-          if (confidence >= 95) exactMatches++;
-          else if (confidence >= 85) highConfidenceMatches++;
-          else if (confidence >= 70) mediumConfidenceMatches++; // 70-84
-          else lowConfidenceMatches++; // Below 70
-          
-          // Check for review needed based on matchType or confidence score range
-          if (match.matchType && (match.matchType.includes('REVIEW') || (confidence < 85 && confidence >= 70))) {
-            reviewRequiredMatches++;
-          }
-        }
-      });
-    });
+    const counts = summarizeMatches(matchResults);
 
     const matchingTime = (new Date().getTime() - startTime) / 1000;
-    statusCell.setValue(`PROCESSING - Found ${totalMatches} potential matches in ${matchingTime.toFixed(1)}s. Updating sheet...`); SpreadsheetApp.flush();
-    
+    statusCell.setValue(`PROCESSING - Found ${counts.totalMatches} potential matches in ${matchingTime.toFixed(1)}s. Updating sheet...`); SpreadsheetApp.flush();
+
     appendMatchResultsToSheet(matchResults, matchingSheet); // Clears and appends in one go now
-    
+
     const finalRowCount = matchingSheet.getLastRow() - 2; // Data starts at row 3
     if (finalRowCount > 0) {
         addConditionalFormattingToMatchingSheet(matchingSheet, finalRowCount);
     }
 
     const totalTime = (new Date().getTime() - startTime) / 1000;
-    // *** FIXED: reviewRequiredMatchesOverall changed to reviewRequiredMatches ***
-    statusCell.setValue(`MATCHING COMPLETE - ${matchResults.length} MFR SKUs processed in ${totalTime.toFixed(1)}s. ${totalMatches} matches. ${reviewRequiredMatches} for review.`).setBackground('#d9ead3');
-    ui.alert('Accurate SKU Matching Complete',
-             `${matchResults.length} MFR SKUs processed in ${totalTime.toFixed(1)}s.\n` +
-             `Total matches: ${totalMatches}\n` +
-             `Exact (95-100%): ${exactMatches}\nHigh (85-94%): ${highConfidenceMatches}\n` +
-             `Medium (70-84%): ${mediumConfidenceMatches}\nLow (<70%): ${lowConfidenceMatches}\n` +
-             `${reviewRequiredMatches} matches require review.`, ui.ButtonSet.OK);
+    finalizeMatching(statusCell, matchResults.length, counts, totalTime, ui);
 
   } catch (error) {
     logError('runSkuMatching', 'Main process failed', '', error, true, ui);
