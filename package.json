@@ -1,0 +1,21 @@
+{
+  "name": "pricechangestemplate",
+  "version": "1.0.0",
+  "description": "",
+  "main": "PriceChangesTemplate.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "setupFiles": [
+      "./tests/setup.js"
+    ]
+  }
+}
