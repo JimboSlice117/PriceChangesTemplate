@@ -269,7 +269,7 @@ function runSkuMatching() {
     const matchingTime = (new Date().getTime() - startTime) / 1000;
     statusCell.setValue(`PROCESSING - Found ${totalMatches} potential matches in ${matchingTime.toFixed(1)}s. Updating sheet...`); SpreadsheetApp.flush();
     
-    // For a single run, outputMatchResults_append with isFirstBatch = true will clear and write
+    // For a single run, appendMatchResultsToSheet writes the results after the sheet was cleared above
     appendMatchResultsToSheet(matchResults, matchingSheet, true); 
     
     const finalRowCount = matchingSheet.getLastRow() - 2; // Recalculate after writing
