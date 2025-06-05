@@ -686,6 +686,8 @@ function onOpen() {
     .addSeparator()
     .addItem('Generate CP Listings', 'generateCPListings')
     .addItem('Identify Discontinued Items', 'identifyDiscontinuedItems')
+    .addSeparator()
+    .addItem("Generate Isaac's Report", 'generateIsaacsReport')
     .addToUi();
 }
 
@@ -2542,4 +2544,97 @@ function applyDiscontinuedFormatting(sheet, rowCount) {
         sheet.getRange(dataStartRow, dateCol + 1, rowCount, 1).setNumberFormat('M/d/yyyy h:mm:ss');
     }
     Logger.log("Applied Discontinued formatting.");
+}
+
+function generateIsaacsReport() {
+  const ui = SpreadsheetApp.getUi();
+  const confirm = ui.alert("Generate Isaac's Report",
+    'Create a summary report from the latest price analysis data?', ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) return;
+
+  const dashboardSheet = SS.getSheetByName('Price Analysis Dashboard');
+  const priceChangesSheet = SS.getSheetByName('Price Changes');
+  if (!dashboardSheet || !priceChangesSheet) {
+    ui.alert("Isaac's Report Error", 'Required sheets not found. Run "Update Price Analysis" first.', ui.ButtonSet.OK);
+    return;
+  }
+
+  let reportSheet = SS.getSheetByName("Isaac's Report");
+  if (!reportSheet) reportSheet = SS.insertSheet("Isaac's Report");
+  reportSheet.clearContents();
+  reportSheet.clearFormats();
+
+  // Title
+  reportSheet.getRange(1, 1, 1, 6).merge()
+    .setValue("ISAAC'S REPORT")
+    .setFontSize(16).setFontWeight('bold')
+    .setHorizontalAlignment('center').setBackground('#e0e0e0');
+
+  // Gather summary metrics from dashboard
+  const metrics = [
+    ['Total Products', dashboardSheet.getRange(3, 2).getValue()],
+    ['Price Increases', dashboardSheet.getRange(3, 5).getValue()],
+    ['Price Decreases', dashboardSheet.getRange(3, 8).getValue()],
+    ['Average Change', dashboardSheet.getRange(3, 11).getValue()],
+    ['MAP Violations', dashboardSheet.getRange(4, 2).getValue()],
+    ['High Impact Changes', dashboardSheet.getRange(4, 5).getValue()],
+    ['Unmatched Products', dashboardSheet.getRange(4, 8).getValue()],
+    ['B-Stock Changes', dashboardSheet.getRange(4, 11).getValue()]
+  ];
+
+  reportSheet.getRange(3, 1, 1, 2).setValues([['Metric', 'Value']])
+    .setBackground(COLORS.HEADER_BG).setFontColor(COLORS.HEADER_TEXT)
+    .setFontWeight('bold').setHorizontalAlignment('center');
+  reportSheet.getRange(4, 1, metrics.length, 2).setValues(metrics);
+  reportSheet.autoResizeColumn(1);
+  reportSheet.autoResizeColumn(2);
+
+  let currentRow = 4 + metrics.length + 2;
+  const headers = ['MFR SKU', 'Platform', 'Old Price', 'New Price', 'Change $', 'Change %'];
+
+  const priceData = priceChangesSheet.getDataRange().getValues();
+  const increases = [];
+  const decreases = [];
+  let section = '';
+  for (let i = 0; i < priceData.length; i++) {
+    const first = priceData[i][0];
+    if (!first) continue;
+    const text = String(first);
+    if (text.indexOf('PRICE INCREASES') === 0) { section = 'inc'; continue; }
+    if (text.indexOf('PRICE DECREASES') === 0) { section = 'dec'; continue; }
+    if (section && text === headers[0]) continue; // skip header
+    if (section === 'inc') increases.push(priceData[i].slice(0, 6));
+    if (section === 'dec') decreases.push(priceData[i].slice(0, 6));
+  }
+
+  // Price increases
+  reportSheet.getRange(currentRow, 1).setValue('PRICE INCREASES').setFontWeight('bold').setBackground(COLORS.PRICE_UP);
+  currentRow++;
+  reportSheet.getRange(currentRow, 1, 1, headers.length).setValues([headers]).setFontWeight('bold').setBackground('#f2f2f2');
+  currentRow++;
+  if (increases.length > 0) {
+    reportSheet.getRange(currentRow, 1, increases.length, headers.length).setValues(increases);
+    reportSheet.getRange(currentRow, 3, increases.length, 3).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow, 6, increases.length, 1).setNumberFormat('0.00%');
+    currentRow += increases.length;
+  } else {
+    reportSheet.getRange(currentRow, 1).setValue('No price increases.').setFontStyle('italic');
+    currentRow++;
+  }
+
+  currentRow += 2;
+  reportSheet.getRange(currentRow, 1).setValue('PRICE DECREASES').setFontWeight('bold').setBackground(COLORS.PRICE_DOWN);
+  currentRow++;
+  reportSheet.getRange(currentRow, 1, 1, headers.length).setValues([headers]).setFontWeight('bold').setBackground('#f2f2f2');
+  currentRow++;
+  if (decreases.length > 0) {
+    reportSheet.getRange(currentRow, 1, decreases.length, headers.length).setValues(decreases);
+    reportSheet.getRange(currentRow, 3, decreases.length, 3).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow, 6, decreases.length, 1).setNumberFormat('0.00%');
+  } else {
+    reportSheet.getRange(currentRow, 1).setValue('No price decreases.').setFontStyle('italic');
+  }
+
+  for (let i = 1; i <= headers.length; i++) reportSheet.autoResizeColumn(i);
+  ui.alert("Isaac's Report Generated", "Isaac's Report has been updated.", ui.ButtonSet.OK);
 }
