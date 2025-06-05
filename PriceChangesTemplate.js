@@ -7,7 +7,7 @@
  * Includes a dedicated "Price Changes" tab.
  *
  * Changes:
- * - Fixed 'reviewRequiredMatchesOverall' typo in runSkuMatching.
+ * - Fixed final status message to reference 'reviewRequiredMatches' in runSkuMatching.
  * - Modified logic to effectively ignore "Clean Sku" columns for matching by not populating/using cleanSkuMaps.
  * - Added a local cache for extractSkuAttributesAndCore results within accurateFindBestMatch_optimized.
  * - Enhanced error logging and added more try-catch blocks for robustness.
@@ -1002,7 +1002,7 @@ function runSkuMatching() {
     }
 
     const totalTime = (new Date().getTime() - startTime) / 1000;
-    // *** FIXED: reviewRequiredMatchesOverall changed to reviewRequiredMatches ***
+    // *** FIXED: now using reviewRequiredMatches ***
     statusCell.setValue(`MATCHING COMPLETE - ${matchResults.length} MFR SKUs processed in ${totalTime.toFixed(1)}s. ${totalMatches} matches. ${reviewRequiredMatches} for review.`).setBackground('#d9ead3');
     ui.alert('Accurate SKU Matching Complete',
              `${matchResults.length} MFR SKUs processed in ${totalTime.toFixed(1)}s.\n` +
