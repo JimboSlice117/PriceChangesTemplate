@@ -2543,3 +2543,8 @@ function applyDiscontinuedFormatting(sheet, rowCount) {
     }
     Logger.log("Applied Discontinued formatting.");
 }
+
+if (typeof module !== "undefined") {
+  module.exports = { getBStockInfo, conservativeNormalizeSku };
+}
+
