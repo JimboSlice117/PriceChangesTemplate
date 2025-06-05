@@ -501,7 +501,7 @@ function validateMatch_optimized(mfrSkuRaw, mfrAtt, platformSkuRaw, platAtt, pla
 }
 
 
-function accurateFindBestMatch_optimized(rawMfrSku, mfrExtractedAttributes, platformItemsWithAttributes, platformSkuMap, platform) {
+function accurateFindBestMatch_optimized(rawMfrSku, mfrExtractedAttributes, platformItemsWithAttributes, platformSkuMap, platformCoreSkuMap, platform) {
     // Local cache for extractSkuAttributesAndCore results for the current MFR SKU processing
     const localAttributeExtractionCache = new Map();
     function getCachedPlatformAttributes(platSku) {
@@ -534,11 +534,21 @@ function accurateFindBestMatch_optimized(rawMfrSku, mfrExtractedAttributes, plat
         }
     }
 
-    // 2. Iterate through all platform items for more detailed matching (if no quick map match or low confidence)
+    // 2. Iterate through platform items filtered by core SKU when possible
     let bestMatch = null;
     let highestConfidence = 0;
 
-    for (const itemContainer of platformItemsWithAttributes) {
+    let searchList = platformItemsWithAttributes;
+    let usedCoreFilter = false;
+    if (platformCoreSkuMap && mfrExtractedAttributes.coreSku) {
+        const coreItems = platformCoreSkuMap[mfrExtractedAttributes.coreSku];
+        if (coreItems && coreItems.length > 0) {
+            searchList = coreItems;
+            usedCoreFilter = true;
+        }
+    }
+
+    for (const itemContainer of searchList) {
         if (!itemContainer.sku) continue;
         
         // Use pre-calculated attributes if available, otherwise calculate (and cache locally if this loop is for the same mfrSku)
@@ -562,6 +572,27 @@ function accurateFindBestMatch_optimized(rawMfrSku, mfrExtractedAttributes, plat
         }
     }
 
+    if (usedCoreFilter && (!bestMatch || highestConfidence < 85)) {
+        for (const itemContainer of platformItemsWithAttributes) {
+            if (searchList.indexOf(itemContainer) !== -1) continue;
+            if (!itemContainer.sku) continue;
+            const platformAttributes = itemContainer.extractedAttributes || getCachedPlatformAttributes(itemContainer.sku);
+            if (!platformAttributes) continue;
+            const validation = validateMatch_optimized(rawMfrSku, mfrExtractedAttributes, itemContainer.sku, platformAttributes, platform);
+            if (validation.confidence > highestConfidence) {
+                highestConfidence = validation.confidence;
+                bestMatch = {
+                    platformSku: itemContainer.sku,
+                    currentPrice: itemContainer.price,
+                    currentCost: itemContainer.cost,
+                    confidenceScore: validation.confidence,
+                    matchType: validation.valid === true ? 'Validated-Strong' : (validation.valid === 'NEEDS_REVIEW' ? 'Validated-Needs-Review' : 'Validated-Low-Confidence'),
+                    matchReason: validation.reason
+                };
+            }
+        }
+    }
+
     if (bestMatch) {
         if (bestMatch.confidenceScore >= 85) return bestMatch;
         // For scores between 70 and 84, flag for review.
@@ -580,12 +611,14 @@ function accurateFindBestMatch_optimized(rawMfrSku, mfrExtractedAttributes, plat
 // ---------------- PRE-PROCESSING OF PLATFORM DATA ----------------
 function preProcessAllPlatformData(platformDataRaw) {
   const platformSkuMaps = {};
+  const platformCoreSkuMaps = {};
   // const cleanSkuMaps = {}; // No longer populating or using cleanSkuMaps
   const preProcessedPlatformDataWithAttributes = {};
 
   Logger.log("Starting pre-processing of all platform data...");
   for (const platform in platformDataRaw) {
     platformSkuMaps[platform] = {};
+    platformCoreSkuMaps[platform] = {};
     // cleanSkuMaps[platform] = {}; // Do not initialize if not used
     preProcessedPlatformDataWithAttributes[platform] = platformDataRaw[platform].map(item => {
       if (!item.sku) return { ...item, extractedAttributes: null /*, cleanExtractedAttributes: null*/ };
@@ -594,9 +627,14 @@ function preProcessAllPlatformData(platformDataRaw) {
       // const itemWithAttributes = { ...item, extractedAttributes: attributes, cleanExtractedAttributes: null };
       const itemWithAttributes = { ...item, extractedAttributes: attributes };
 
-
       if (attributes && attributes.normalizedSku) {
         platformSkuMaps[platform][attributes.normalizedSku] = itemWithAttributes;
+      }
+
+      if (attributes && attributes.coreSku) {
+        const core = attributes.coreSku;
+        if (!platformCoreSkuMaps[platform][core]) platformCoreSkuMaps[platform][core] = [];
+        platformCoreSkuMaps[platform][core].push(itemWithAttributes);
       }
 
       // Logic for Clean Sku removed as per user request to ignore it
@@ -613,12 +651,12 @@ function preProcessAllPlatformData(platformDataRaw) {
   }
   Logger.log("Full platform data pre-processing complete.");
   // return { preProcessedPlatformDataWithAttributes, platformSkuMaps, cleanSkuMaps };
-  return { preProcessedPlatformDataWithAttributes, platformSkuMaps };
+  return { preProcessedPlatformDataWithAttributes, platformSkuMaps, platformCoreSkuMaps };
 }
 
 
 // ---------------- CORE MATCHING LOGIC (SINGLE RUN) ----------------
-function performFullMatching(manufacturerData, preProcessedPlatformData, platformSkuMaps /*, cleanSkuMaps - removed */) {
+function performFullMatching(manufacturerData, preProcessedPlatformData, platformSkuMaps, platformCoreSkuMaps /*, cleanSkuMaps - removed */) {
   const matchResults = [];
   Object.keys(skuNormalizeCache).forEach(key => delete skuNormalizeCache[key]); // Clear global normalization cache at start of full matching
 
@@ -657,7 +695,7 @@ function performFullMatching(manufacturerData, preProcessedPlatformData, platfor
           mfrExtractedAttributes, // Pass the cached attributes
           preProcessedPlatformData[platform],
           platformSkuMaps[platform],
-          // cleanSkuMaps[platform], // Removed
+          platformCoreSkuMaps[platform],
           platform
         );
       } catch (error) {
@@ -960,7 +998,7 @@ function runSkuMatching() {
       return;
     }
 
-    const { preProcessedPlatformDataWithAttributes, platformSkuMaps /*, cleanSkuMaps - removed */ } = preProcessAllPlatformData(rawPlatformData);
+    const { preProcessedPlatformDataWithAttributes, platformSkuMaps, platformCoreSkuMaps /*, cleanSkuMaps - removed */ } = preProcessAllPlatformData(rawPlatformData);
     
     let totalPlatformSkus = 0; 
     for (const platform in preProcessedPlatformDataWithAttributes) {
@@ -970,7 +1008,7 @@ function runSkuMatching() {
     const dataLoadTime = (new Date().getTime() - startTime) / 1000;
     statusCell.setValue(`PROCESSING - Loaded & pre-processed ${totalPlatformSkus} platform SKUs in ${dataLoadTime.toFixed(1)}s (total). Starting matching...`); SpreadsheetApp.flush();
 
-    const matchResults = performFullMatching(manufacturerData, preProcessedPlatformDataWithAttributes, platformSkuMaps /*, cleanSkuMaps - removed */);
+    const matchResults = performFullMatching(manufacturerData, preProcessedPlatformDataWithAttributes, platformSkuMaps, platformCoreSkuMaps /*, cleanSkuMaps - removed */);
 
     let totalMatches = 0, exactMatches = 0, highConfidenceMatches = 0, mediumConfidenceMatches = 0, lowConfidenceMatches = 0, reviewRequiredMatches = 0;
     matchResults.forEach(result => {
