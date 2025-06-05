@@ -298,9 +298,13 @@ function strictSimilarityCheck(coreSku1, coreSku2) {
     const coreSimilarity = ((coreMaxLength - coreDistance) / coreMaxLength);
 
     if (coreSimilarity >= 0.88) return { score: Math.min(90, 65 + Math.round(coreSimilarity * 30)), reason: `High core similarity: ${Math.round(coreSimilarity * 100)}% (dist ${coreDistance})` }; // Adjusted scoring
-    // Check for containment (e.g., "PART" in "PARTXYZ" or "XYZPART")
-    if (len1 >= 3 && coreSku2.includes(coreSku1)) return { score: 88, reason: `Core1 (${coreSku1}) in Core2 (${coreSku2})` };
-    if (len2 >= 3 && coreSku1.includes(coreSku2)) return { score: 88, reason: `Core2 (${coreSku2}) in Core1 (${coreSku1})` };
+    // Check for containment only when delimited by a hyphen to avoid partial prefix matches
+    if (len1 >= 3 && (coreSku2.startsWith(coreSku1 + '-') || coreSku2.endsWith('-' + coreSku1))) {
+        return { score: 88, reason: `Core1 (${coreSku1}) delimited in Core2 (${coreSku2})` };
+    }
+    if (len2 >= 3 && (coreSku1.startsWith(coreSku2 + '-') || coreSku1.endsWith('-' + coreSku2))) {
+        return { score: 88, reason: `Core2 (${coreSku2}) delimited in Core1 (${coreSku1})` };
+    }
 
     // Longest common substring check
     const commonSub = longestCommonSubstring(coreSku1, coreSku2);
