@@ -830,7 +830,7 @@ function createCPListingsTab() {
     const sheet = SS.insertSheet('CP Listings');
     const headers = ['Manufacturer SKU', 'UPC', 'MSRP', 'MAP', 'Dealer Price', 'Amazon', 'eBay', 'Shopify', 'Reverb', 'inFlow', 'SellerCloud', 'Action Needed'];
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setBackground(COLORS.HEADER_BG).setFontColor(COLORS.HEADER_TEXT).setFontWeight('bold').setHorizontalAlignment('center');
-    sheet.getRange(2,1,1,headers.length).merge().setValue('Items from MFR sheet needing listing on one or more platforms.').setFontStyle('italic').setHorizontalAlignment('center');
+    sheet.getRange(2,1,1,headers.length).merge().setValue('Items from MFR sheet that need listing on one or more platforms.').setFontStyle('italic').setHorizontalAlignment('center');
     sheet.setColumnWidth(1, 200); sheet.setColumnWidth(2, 150);
     sheet.setColumnWidth(3, 100);sheet.setColumnWidth(4, 100);sheet.setColumnWidth(5, 100);
     for (let i=6; i<=11; i++) sheet.setColumnWidth(i,100); // Platform columns
