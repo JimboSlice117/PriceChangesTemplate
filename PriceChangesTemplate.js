@@ -850,59 +850,70 @@ function createDiscontinuedTab() {
 }
 
 function createExportTab(platform) {
-  const platformInfo = PLATFORM_TABS[platform];
-  if (!platformInfo) {
-      logError('createExportTab', `Platform info not found for ${platform}`);
-      return;
-  }
-  const tabName = platformInfo.name;
-  const headers = platformInfo.headers;
-  const sheet = SS.insertSheet(tabName);
+  try {
+    const platformInfo = PLATFORM_TABS[platform];
+    if (!platformInfo) {
+        logError('createExportTab', `Platform info not found for ${platform}`);
+        return null;
+    }
+    const tabName = platformInfo.name;
+    const headers = platformInfo.headers;
+    const sheet = SS.insertSheet(tabName);
 
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers])
-    .setBackground(COLORS[platform] || '#cccccc').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
-  sheet.getRange(2, 1, 1, headers.length).merge()
-    .setValue('NOT READY - Run "Generate Export Files"').setFontWeight('bold').setHorizontalAlignment('center').setBackground('#f4b400').setFontColor('#000000');
-  sheet.getRange(3, 1, 1, headers.length).merge()
-    .setValue('Data ready to export to ' + tabName.replace(' Export', '')).setFontStyle('italic').setHorizontalAlignment('center');
-  for (let i = 0; i < headers.length; i++) {
-    sheet.setColumnWidth(i + 1, 150);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+      .setBackground(COLORS[platform] || '#cccccc').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.getRange(2, 1, 1, headers.length).merge()
+      .setValue('NOT READY - Run "Generate Export Files"').setFontWeight('bold').setHorizontalAlignment('center').setBackground('#f4b400').setFontColor('#000000');
+    sheet.getRange(3, 1, 1, headers.length).merge()
+      .setValue('Data ready to export to ' + tabName.replace(' Export', '')).setFontStyle('italic').setHorizontalAlignment('center');
+    for (let i = 0; i < headers.length; i++) {
+      sheet.setColumnWidth(i + 1, 150);
+    }
+    sheet.getRange(4,1,100,headers.length).setBackground('#f8f9fa');
+    return sheet;
+  } catch (error) {
+    logError('createExportTab', `Failed to create export tab for ${platform}`, '', error);
+    return null;
   }
-  sheet.getRange(4,1,100,headers.length).setBackground('#f8f9fa');
 }
 
 function createPriceChangesTab() {
-  const sheetName = "Price Changes";
-  let sheet = SS.getSheetByName(sheetName);
-  if (sheet) {
-    Logger.log(`Sheet "${sheetName}" already exists. Content will be overwritten or appended.`);
-  } else {
-    sheet = SS.insertSheet(sheetName);
-    Logger.log(`Sheet "${sheetName}" created.`);
+  try {
+    const sheetName = "Price Changes";
+    let sheet = SS.getSheetByName(sheetName);
+    if (sheet) {
+      Logger.log(`Sheet "${sheetName}" already exists. Content will be overwritten or appended.`);
+    } else {
+      sheet = SS.insertSheet(sheetName);
+      Logger.log(`Sheet "${sheetName}" created.`);
+    }
+
+    sheet.clearContents(); // Always clear for fresh data
+
+    // Price Increases Section
+    sheet.getRange("A1").setValue("PRICE INCREASES (High Confidence Only - 85%+)").setFontWeight("bold").setBackground(COLORS.PRICE_UP);
+    const headersUp = ["MFR SKU", "Platform", "Old Price", "New Price", "Change $", "Change %"];
+    sheet.getRange(2, 1, 1, headersUp.length).setValues([headersUp]).setFontWeight("bold").setBackground("#f2f2f2");
+    sheet.setColumnWidth(1, 200); // MFR SKU
+    sheet.setColumnWidth(2, 100); // Platform
+    sheet.setColumnWidth(3, 100); // Old Price
+    sheet.setColumnWidth(4, 100); // New Price
+    sheet.setColumnWidth(5, 100); // Change $
+    sheet.setColumnWidth(6, 100); // Change %
+
+    // Determine start row for decreases dynamically, ensuring space
+    // This calculation will be done when populating, as last row changes
+    // For setup, just define the header section for decreases conceptually
+    const placeholderStartRowDecreases = 50; // Placeholder, actual row determined in populatePriceChangesTab
+    sheet.getRange(placeholderStartRowDecreases, 1).setValue("PRICE DECREASES (High Confidence Only - 85%+)").setFontWeight("bold").setBackground(COLORS.PRICE_DOWN);
+    const headersDown = ["MFR SKU", "Platform", "Old Price", "New Price", "Change $", "Change %"];
+    sheet.getRange(placeholderStartRowDecreases + 1, 1, 1, headersDown.length).setValues([headersDown]).setFontWeight("bold").setBackground("#f2f2f2");
+
+    return sheet;
+  } catch (error) {
+    logError('createPriceChangesTab', 'Failed to create Price Changes tab', '', error);
+    return null;
   }
-
-  sheet.clearContents(); // Always clear for fresh data
-
-  // Price Increases Section
-  sheet.getRange("A1").setValue("PRICE INCREASES (High Confidence Only - 85%+)").setFontWeight("bold").setBackground(COLORS.PRICE_UP);
-  const headersUp = ["MFR SKU", "Platform", "Old Price", "New Price", "Change $", "Change %"];
-  sheet.getRange(2, 1, 1, headersUp.length).setValues([headersUp]).setFontWeight("bold").setBackground("#f2f2f2");
-  sheet.setColumnWidth(1, 200); // MFR SKU
-  sheet.setColumnWidth(2, 100); // Platform
-  sheet.setColumnWidth(3, 100); // Old Price
-  sheet.setColumnWidth(4, 100); // New Price
-  sheet.setColumnWidth(5, 100); // Change $
-  sheet.setColumnWidth(6, 100); // Change %
-
-  // Determine start row for decreases dynamically, ensuring space
-  // This calculation will be done when populating, as last row changes
-  // For setup, just define the header section for decreases conceptually
-  const placeholderStartRowDecreases = 50; // Placeholder, actual row determined in populatePriceChangesTab
-  sheet.getRange(placeholderStartRowDecreases, 1).setValue("PRICE DECREASES (High Confidence Only - 85%+)").setFontWeight("bold").setBackground(COLORS.PRICE_DOWN);
-  const headersDown = ["MFR SKU", "Platform", "Old Price", "New Price", "Change $", "Change %"];
-  sheet.getRange(placeholderStartRowDecreases + 1, 1, 1, headersDown.length).setValues([headersDown]).setFontWeight("bold").setBackground("#f2f2f2");
-  
-  return sheet;
 }
 
 
@@ -1840,7 +1851,8 @@ function populatePriceChangesTab(sheet, priceUpItems, priceDownItems) {
       logError('populatePriceChangesTab', 'Price Changes sheet not found.');
       return;
   }
-  sheet.clearContents(); // Clear previous content
+  try {
+    sheet.clearContents(); // Clear previous content
 
   const headers = ["MFR SKU", "Platform", "Old Price", "New Price", "Change $", "Change %"];
   const currencyFormat = "$#,##0.00";
@@ -1882,10 +1894,13 @@ function populatePriceChangesTab(sheet, priceUpItems, priceDownItems) {
   }
   
   // Auto-resize columns for better readability
-  for (let i = 1; i <= headers.length; i++) {
-      sheet.autoResizeColumn(i);
+    for (let i = 1; i <= headers.length; i++) {
+        sheet.autoResizeColumn(i);
+    }
+    Logger.log("Price Changes tab populated.");
+  } catch (error) {
+    logError('populatePriceChangesTab', 'Failed to populate Price Changes tab', '', error);
   }
-  Logger.log("Price Changes tab populated.");
 }
 
 
@@ -2043,21 +2058,22 @@ function generateExports() {
 
     // --- Generate Exports for each Platform Tab ---
     for (const platformKey in PLATFORM_TABS) {
-      const exportSheetName = PLATFORM_TABS[platformKey].name;
-      let exportSheet = SS.getSheetByName(exportSheetName);
-      if (!exportSheet) {
-        createExportTab(platformKey); // Create if doesn't exist
-        exportSheet = SS.getSheetByName(exportSheetName);
-        if(!exportSheet) {
-            logError('generateExports', `Error: Could not create/find export sheet for ${platformKey}`);
-            continue; // Skip this platform
+      try {
+        const exportSheetName = PLATFORM_TABS[platformKey].name;
+        let exportSheet = SS.getSheetByName(exportSheetName);
+        if (!exportSheet) {
+          createExportTab(platformKey); // Create if doesn't exist
+          exportSheet = SS.getSheetByName(exportSheetName);
+          if(!exportSheet) {
+              logError('generateExports', `Error: Could not create/find export sheet for ${platformKey}`);
+              continue; // Skip this platform
+          }
         }
-      }
-      const exportHeaders = PLATFORM_TABS[platformKey].headers;
-      // Clear old data from export sheet (from row 4 down)
-      if (exportSheet.getLastRow() > 3) {
-        exportSheet.getRange(4, 1, exportSheet.getLastRow() - 3, exportHeaders.length).clearContent();
-      }
+        const exportHeaders = PLATFORM_TABS[platformKey].headers;
+        // Clear old data from export sheet (from row 4 down)
+        if (exportSheet.getLastRow() > 3) {
+          exportSheet.getRange(4, 1, exportSheet.getLastRow() - 3, exportHeaders.length).clearContent();
+        }
 
       const exportRows = [];
       for (const analysisRow of analysisData) {
@@ -2115,6 +2131,9 @@ function generateExports() {
         exportSheet.getRange(2, 1, 1, exportHeaders.length).merge()
                    .setValue(`NO DATA (${EXPORT_CONFIDENCE_THRESHOLD}%+ matches not found for ${platformKey})`)
                    .setBackground('#f4cccc').setFontColor('#000000');
+      }
+      } catch (errPlatform) {
+        logError('generateExports', `Error processing platform ${platformKey}`, '', errPlatform);
       }
     }
     ui.alert('Exports Generated', `Export files updated with ${EXPORT_CONFIDENCE_THRESHOLD}%+ confidence matches using prices from the Analysis Dashboard.`, ui.ButtonSet.OK);
