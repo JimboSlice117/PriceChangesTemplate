@@ -1663,9 +1663,35 @@ function saveMatches() {
       ui.alert('Info', 'No new unique matches (70%+) found to save to Match History.', ui.ButtonSet.OK);
     }
 
-  } catch (error) { 
+  } catch (error) {
       logError('saveMatches', 'Error saving matches', '', error, true, ui);
   }
+}
+
+function getDashboardIndices(headers) {
+  return {
+    sku: headers.indexOf('SKU'),
+    map: headers.indexOf('MAP'),
+    dealer: headers.indexOf('Dealer'),
+    bStock: headers.indexOf('B-Stock'),
+    platform: headers.indexOf('Platform'),
+    current: headers.indexOf('Current'),
+    newPrice: headers.indexOf('New'),
+    changeAmt: headers.indexOf('Change $'),
+    changePct: headers.indexOf('Change %'),
+    status: headers.indexOf('Status')
+  };
+}
+
+function updateDashboardSummary(sheet, metrics) {
+  sheet.getRange(3, 2).setValue(metrics.totalProducts);
+  sheet.getRange(3, 5).setValue(metrics.priceIncreases);
+  sheet.getRange(3, 8).setValue(metrics.priceDecreases);
+  sheet.getRange(3, 11).setValue(metrics.avgChange).setNumberFormat('0.0%');
+  sheet.getRange(4, 2).setValue(metrics.mapViolations);
+  sheet.getRange(4, 5).setValue(metrics.highImpactChanges);
+  sheet.getRange(4, 8).setValue(metrics.unmatched);
+  sheet.getRange(4, 11).setValue(metrics.bStockChanges);
 }
 
 function updatePriceAnalysis() {
@@ -1729,13 +1755,7 @@ function updatePriceAnalysis() {
 
     resetDashboardLayout(dashboardSheet); // Clear old data and reset layout
     const dashboardHeaders = dashboardSheet.getRange(6, 1, 1, dashboardSheet.getLastColumn()).getValues()[0];
-    const dashIndices = { 
-        sku: dashboardHeaders.indexOf('SKU'), map: dashboardHeaders.indexOf('MAP'), dealer: dashboardHeaders.indexOf('Dealer'), 
-        bStock: dashboardHeaders.indexOf('B-Stock'), platform: dashboardHeaders.indexOf('Platform'), 
-        current: dashboardHeaders.indexOf('Current'), newPrice: dashboardHeaders.indexOf('New'), 
-        changeAmt: dashboardHeaders.indexOf('Change $'), changePct: dashboardHeaders.indexOf('Change %'), 
-        status: dashboardHeaders.indexOf('Status') 
-    };
+    const dashIndices = getDashboardIndices(dashboardHeaders);
 
     const analysisDataForDashboard = [];
     const priceUpItemsForPriceChangeTab = [];
@@ -1862,15 +1882,17 @@ function updatePriceAnalysis() {
           }
       });
     }
-    // Update summary metrics on Dashboard
-    dashboardSheet.getRange(3, 2).setValue(totalProductsAnalyzed);
-    dashboardSheet.getRange(3, 5).setValue(priceIncreases);
-    dashboardSheet.getRange(3, 8).setValue(priceDecreases);
-    dashboardSheet.getRange(3, 11).setValue(validProductCountForAvg > 0 ? (totalPercentChangeValue / validProductCountForAvg / 100) : 0).setNumberFormat('0.0%');
-    dashboardSheet.getRange(4, 2).setValue(mapViolations);
-    dashboardSheet.getRange(4, 5).setValue(highImpactChanges);
-    dashboardSheet.getRange(4, 8).setValue(unmatchedProductsThisRun);
-    dashboardSheet.getRange(4, 11).setValue(bStockChanges);
+    const metrics = {
+        totalProducts: totalProductsAnalyzed,
+        priceIncreases,
+        priceDecreases,
+        avgChange: validProductCountForAvg > 0 ? (totalPercentChangeValue / validProductCountForAvg / 100) : 0,
+        mapViolations,
+        highImpactChanges,
+        unmatched: unmatchedProductsThisRun,
+        bStockChanges
+    };
+    updateDashboardSummary(dashboardSheet, metrics);
     applyDashboardFormatting(dashboardSheet, analysisDataForDashboard.length);
     dashboardSheet.getRange(1, 1, 1, dashboardSheet.getLastColumn()).merge().setValue('PRICE ANALYSIS DASHBOARD - COMPLETE - Last Updated: ' + new Date().toLocaleString()).setBackground('#e0e0e0');
 
